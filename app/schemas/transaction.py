@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TransactionType(str, Enum):
@@ -20,7 +20,7 @@ class TransactionStatus(str, Enum):
 
 
 class TransactionBase(BaseModel):
-    amount: Decimal
+    amount: Decimal = Field(..., gt=0, decimal_places=2)
     reference: Optional[str] = None
 
 
