@@ -7,13 +7,16 @@ from contextlib import asynccontextmanager
 from alembic.config import Config
 from alembic import command
 
+import asyncio
+
 # Automate migrations on startup
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Run Alembic Upgrades
     try:
         alembic_cfg = Config("alembic.ini")
-        command.upgrade(alembic_cfg, "head")
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
     except Exception as e:
         print(f"Migration failed: {e}")
     yield
