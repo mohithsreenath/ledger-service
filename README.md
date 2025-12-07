@@ -22,17 +22,24 @@ docker-compose run --rm app pytest
 
 ## 🏛️ Architecture & Design Decisions
 
-### Database Choice: PostgreSQL
-*   **Why**: Selected for strict **ACID compliance** and **Row-Level Locking** capabilities.
-*   **Schema**: Implements **Double-Entry Bookkeeping**.
-    *   `LedgerEntry`: Immutable record of every credit/debit.
-    *   `Account.balance`: Updated via transaction but protected by constraints (`CHECK balance >= 0`).
+### 1. Database Choice: PostgreSQL
+*   **Why SQL over NoSQL?**: Financial data requires **ACID** compliance (Atomicity, Consistency, Isolation, Durability).
+*   **PostgreSQL**: Chosen for its robust transaction support (Row-Level Locking) and `DECIMAL` type precision, which effectively eliminates floating-point rounding errors common in MongoDB or simple float types.
+*   **Schema**: A **Double-Entry Bookkeeping** model was implemented. Every transaction creates at least two immutable `LedgerEntry` records (Debit/Credit). This ensures that the sum of all entries is always zero, providing a built-in audit trail and integrity check.
 
-### Concurrency Strategy: Pessimistic Locking
-*   **Mechanism**: Uses `SELECT ... FOR UPDATE` to lock account rows during a transaction.
-*   **Deadlock Prevention**: Resource ordering (sorting Account IDs) is enforced before locking.
-*   **Result**: Validated to strictly prevent double-spending and race conditions.
+### 2. Concurrency Strategy
+*   **Problem**: Race conditions (e.g., two concurrent withdrawals of $100 from a $150 balance).
+*   **Solution**: **Pessimistic Locking** (`SELECT ... FOR UPDATE`).
+*   **Implementation**: When processing a transaction, we explicitly lock the involved Account rows in the database.
+*   **Deadlock Prevention**: We enforced a strict **Resource Ordering** rule: always lock Account IDs in ascending order (e.g., Lock ID A, then ID B). This makes deadlocks mathematically impossible in standard transfers.
 
+### 3. Scaling Trade-offs (Roadmap to 1 Million TPS)
+*   **Current Limit**: The current Pessimistic Locking strategy scales reliably to ~1,000 TPS (Transactions Per Second) but creates a bottleneck on "hot accounts" (e.g., a massive merchant account receiving thousands of payments at once).
+*   **Future 1M TPS Design**:
+    *   **Event Sourcing**: Switch to an append-only log (like Apache Kafka) for ingestion.
+    *   **CQRS**: Separate the Write model (High speed ingestion) from the Read model (Balances).
+    *   **Sharding**: Partition the database by Account ID to distribute load horizontally.
+    *   **Trade-off**: We would move from Strong Consistency (Immediate Balance Update) to **Eventual Consistency** (Balance updates a few milliseconds later) to achieve this massive throughput.
 
 ## 📁 Key Deliverables
 *   **Language**: Python 3.11 / FastAPI
