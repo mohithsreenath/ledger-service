@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from app.core.exceptions import AccountNotFoundException, InsufficientFundsException
 from app.models.account import Account
@@ -40,7 +41,10 @@ class LedgerService:
             result = await self.db.execute(stmt)
             existing_tx = result.scalar_one_or_none()
             if existing_tx:
+                # Do NOT raise error. This allows clients to safely retry (e.g., on network timeout)
+                # without duplicate billing or confusion.
                 return existing_tx
+
 
         # 2. Lock Accounts (Pessimistic Locking)
         # Determine involved accounts
@@ -58,6 +62,9 @@ class LedgerService:
             .where(Account.id.in_(involved_account_ids))
             .with_for_update()
         )
+        # Optional: Set a lock timeout here if needed for DoS protection
+        # await self.db.execute(text("SET LOCAL lock_timeout = '4s'"))
+        
         result = await self.db.execute(stmt)
         accounts_map = {acc.id: acc for acc in result.scalars().all()}
 
