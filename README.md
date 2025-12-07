@@ -1,51 +1,40 @@
 # Transactional Ledger Service
 
-## Overview
-A simplified internal ledger system built with **Python (FastAPI)** and **PostgreSQL**. It handles money movement between accounts with strict financial accuracy, supporting high concurrency and failure conditions.
+A strict, ACID-compliant ledger API built with **Python (FastAPI)** and **PostgreSQL**.
 
-## Architecture
+## 🛠️ Quick Start (Developer Mode)
 
-### Technology Stack
-- **Language**: Python 3.11+ (FastAPI)
-- **Database**: PostgreSQL 15+
-- **ORM**: SQLAlchemy (Async)
-- **Containerization**: Docker & Docker Compose
-
-### Database Choice: PostgreSQL
-We chose PostgreSQL over MongoDB for the following reasons:
-1.  **ACID Transactions**: Financial data requires strict atomicity and consistency. Postgres provides robust transaction support.
-2.  **Row-Level Locking**: To handle race conditions (double-spending), we use `SELECT ... FOR UPDATE` to lock specific account rows during a transaction.
-3.  **Data Integrity**: Strong typing and constraints ensure that data remains valid (e.g., foreign keys, check constraints).
-
-### Schema Design: Double-Entry Bookkeeping
-We implement a **Double-Entry Bookkeeping** system to ensure auditability and accuracy.
-- **`accounts`**: Stores the current balance (cached for performance) and account details.
-- **`ledger_entries`**: The immutable source of truth. Every transaction creates at least two entries (one debit, one credit).
-    - **Deposit**: Credit User Account, Debit System Cash Account.
-    - **Withdrawal**: Debit User Account, Credit System Cash Account.
-    - **Transfer**: Debit Sender, Credit Receiver.
-- **`transactions`**: Groups ledger entries into a logical operation and handles **Idempotency**.
-
-### Concurrency Strategy
-To prevent race conditions (e.g., two simultaneous withdrawals of $100 from an account with $100):
-- We use **Pessimistic Locking** (`SELECT FOR UPDATE`) on the `accounts` table within a database transaction.
-- This ensures that once a transaction reads an account's balance to check for sufficient funds, no other transaction can modify that account until the first one commits or rolls back.
-- We sort account IDs before locking to prevent **Deadlocks**.
-
-### Idempotency
-- Clients must provide a unique `Idempotency-Key` header.
-- The system checks the `transactions` table for this key.
-- If found, it returns the previous result without re-processing.
-
-## Trade-offs & Scaling
-If this system had to handle **1 million transactions per second**:
-1.  **Database Partitioning/Sharding**: A single Postgres instance cannot write 1M TPS. We would shard the database by Account ID.
-2.  **Event Sourcing**: Instead of locking, we could use an event log (Kafka) and process transactions asynchronously. This trades immediate consistency for high throughput (Eventual Consistency).
-3.  **Caching**: Use Redis for read-heavy balance checks (with cache invalidation strategies).
-
-## Running the Project
+### 1. Run Application
+Start the API and Database (Postgres 15). The `.env` is included for zero-config startup.
 ```bash
 docker-compose up --build
 ```
-The API will be available at `http://localhost:8000`.
-Docs: `http://localhost:8000/docs`
+*   **API**: `http://localhost:8000/api/v1`
+*   **Swagger Docs**: `http://localhost:8000/docs`
+
+### 2. Run Tests
+Execute the integration suite, including race condition verification (simulates 10 concurrent requests).
+```bash
+docker-compose run --rm app pytest
+```
+
+---
+
+## 🏛️ Architecture & Design Decisions
+
+### Database Choice: PostgreSQL
+*   **Why**: Selected for strict **ACID compliance** and **Row-Level Locking** capabilities.
+*   **Schema**: Implements **Double-Entry Bookkeeping**.
+    *   `LedgerEntry`: Immutable record of every credit/debit.
+    *   `Account.balance`: Updated via transaction but protected by constraints (`CHECK balance >= 0`).
+
+### Concurrency Strategy: Pessimistic Locking
+*   **Mechanism**: Uses `SELECT ... FOR UPDATE` to lock account rows during a transaction.
+*   **Deadlock Prevention**: Resource ordering (sorting Account IDs) is enforced before locking.
+*   **Result**: Validated to strictly prevent double-spending and race conditions.
+
+
+## 📁 Key Deliverables
+*   **Language**: Python 3.11 / FastAPI
+*   **Type Safety**: Strict Pydantic models (Input/Output validation).
+*   **Testing**: Full integration coverage for financial correctness.
